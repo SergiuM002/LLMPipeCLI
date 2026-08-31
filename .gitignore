@@ -1,0 +1,5 @@
+**/__pycache__/
+.vscode/
+.*venv*/
+remote script/README.md
+dist/
