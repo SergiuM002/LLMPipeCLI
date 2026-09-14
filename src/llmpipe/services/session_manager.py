@@ -165,6 +165,8 @@ def get_synced_sessions():
     return synced_sessions_with_status    
     
 def get_session_progress(session_info: dict, chunk: str):     
+    session_info["eta"] = None
+    
     if "Script finished." in chunk:
         session_info["finished"] = True  
         session_info["processing"] = False
@@ -182,8 +184,13 @@ def get_session_progress(session_info: dict, chunk: str):
     
     line = lines[-1]
     
-    match = re.search(r"Processing windows:\s*(\d+)%", line)
-    if match:
+    
+    if match := re.search(r"Processing windows:\s*(\d+)%", line):
+        if eta_match := re.search(r"<((\d+:)*\d+),", line):
+            session_info["eta"] = str(eta_match.group(1))   
+        else:
+            session_info["eta"] = None
+
         session_info["progress"] = int(match.group(1))
         session_info["processing"] = False
     else:

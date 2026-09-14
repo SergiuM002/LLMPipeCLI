@@ -49,10 +49,10 @@ class SessionProgressView:
             total=100, 
             completed=session_info["progress"],
             show_live_progress=False if finished else True,
-            show_eta=False if finished or not synced else True
+            show_eta=False
         )
         
-    def update_session(self, session_info: dict, synced: bool, reset: bool=False):
+    def update_session(self, session_info: dict, synced: bool):
         session_id = f"{session_info["name"]}:{session_info["username"]}@{session_info["hostname"]}"    
         
         finished = session_info["finished"]
@@ -72,31 +72,25 @@ class SessionProgressView:
             processing=session_info["processing"],
             finished=finished
         )
-            
-        if not reset:
-            self.progress.update(
-                self.tasks[session_id], 
-                desc_name=desc_name,
-                desc_server=desc_server,
-                desc_synced=desc_synced,
-                desc_status=desc_status,
-                completed=session_info["progress"],
-                show_live_progress=False if finished else True,
-                show_eta=False if finished or not synced else True
+        if not finished and session_info["eta"]:
+            desc_eta = _get_session_desc_eta(
+                eta=session_info["eta"]
             )
         else:
-            self.progress.reset(
-                self.tasks[session_id], 
-                desc_name=desc_name,
-                desc_server=desc_server,
-                desc_synced=desc_synced,
-                desc_status=desc_status,
-                completed=0,
-                start=True,
-                show_live_progress=False if finished else True,
-                show_eta=False if finished or not synced else True
-            )
+            desc_eta = ""
         
+        self.progress.update(
+            self.tasks[session_id], 
+            desc_name=desc_name,
+            desc_server=desc_server,
+            desc_synced=desc_synced,
+            desc_status=desc_status,
+            desc_eta=desc_eta,
+            completed=session_info["progress"],
+            show_live_progress=False if finished else True,
+            show_eta=True if not finished and synced else False
+        )
+
 
 def show_simple_message(message: str):
     """Shows custom message."""
@@ -150,7 +144,10 @@ def _get_session_desc_status(
 ):
     return ((f"{sequence_progress}/{sequence_count} " if not finished else "(finished)") + # Diferentiate between finished and not
         ("processing..." if processing and not finished else "")) # Differentiate between processing and not
-        
+def _get_session_desc_eta(
+    eta: str
+):
+    return f"Sequence ETA: {eta}"
 
             
         

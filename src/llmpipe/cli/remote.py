@@ -120,8 +120,7 @@ def view_sessions():
             DynamicColumn(BarColumn, "show_live_progress"),
             DynamicColumn(TaskProgressColumn, "show_live_progress"),
             TextColumn("{task.fields[desc_status]}"),
-            DynamicColumn(TextColumn, "show_eta", text_format="sequence ETA:"),
-            DynamicColumn(TimeRemainingColumn, "show_eta", compact=True)
+            DynamicColumn(TextColumn, "show_eta", text_format="{task.fields[desc_eta]}"),
         )
         
         with Live(progress, vertical_overflow="visible") as live:
@@ -152,43 +151,8 @@ def view_sessions():
             if not running_sessions:
                 return
             
-            # Stream readers to read real-time remote logs
-            readers = []
-            for session_info in running_sessions:
-                readers.append(session_manager.StreamReader(ssh.get_active_command(f"tail -n 1 -f ~/LLMPipe/{session_info["name"]}.log")))
-
-            while True:
-                for i, session_info in enumerate(running_sessions):
-                    chunk, connected = readers[i].read_chunks()
-                    if not connected:
-                        live.stop()
-                        display.show_error_message("Connection dropped.")
-                        raise typer.Exit(2)
-                    if chunk == "\n" or chunk == "":
-                        continue
-                    
-                    old_sequence_progress = session_info["sequence_progress"]
-                    session_info = session_manager.get_session_progress(session_info=session_info, chunk=chunk)
-                    if old_sequence_progress != session_info["sequence_progress"]:
-                        reset = True
-                    else:
-                        reset = False
-                        
-                    view.update_session(
-                        session_info=session_info,
-                        synced=True,
-                        reset=reset
-                    )   
-                    if session_info["finished"] == False:
-                        running_sessions[i] = session_info
-                    else:
-                        json_manager.save_session_info(login_info["hostname"], login_info["username"], session_info)
-                        running_sessions.pop(i)
-                        readers[i].stop_process()
-                        readers.pop(i)
-                if not running_sessions:
-                    break
-                    
+            _update_running_sessions(running_sessions=running_sessions, live=live, view=view, login_info=login_info)
+                            
     except KeyboardInterrupt:
         for session_info in running_sessions:
             json_manager.save_session_info(login_info["hostname"], login_info["username"], session_info)
@@ -237,7 +201,43 @@ def delete_session(
     else:
         display.show_simple_message("Delete aborted.")
             
-    
+def _update_running_sessions(
+    running_sessions: list[dict], 
+    live: Live,
+    view: display.SessionProgressView,
+    login_info: dict[str]
+):
+    # Stream readers to read real-time remote logs
+    readers = []
+    for session_info in running_sessions:
+        readers.append(session_manager.StreamReader(ssh.get_active_command(f"tail -n 1 -f ~/LLMPipe/{session_info["name"]}.log")))
+
+    while True:
+        for i, session_info in enumerate(running_sessions):
+            chunk, connected = readers[i].read_chunks()
+            if not connected:
+                live.stop()
+                display.show_error_message("Connection dropped.")
+                raise typer.Exit(2)
+            
+            if chunk == "\n" or chunk == "":
+                continue
+            
+            session_info = session_manager.get_session_progress(session_info=session_info, chunk=chunk)
+                
+            view.update_session(
+                session_info=session_info,
+                synced=True,
+            )   
+            if session_info["finished"] == False:
+                running_sessions[i] = session_info
+            else:
+                json_manager.save_session_info(login_info["hostname"], login_info["username"], session_info)
+                running_sessions.pop(i)
+                readers[i].stop_process()
+                readers.pop(i)
+        if not running_sessions:
+            break
             
     
             
