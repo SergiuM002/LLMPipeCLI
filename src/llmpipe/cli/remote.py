@@ -109,6 +109,7 @@ def view_sessions():
             )
             
         if not logged_in:
+            static_table.print_table()
             return
         
         # Get synced sessions saved info
@@ -259,7 +260,6 @@ def _update_running_sessions(
                 
                 session_info = session_manager.get_session_progress(session_info=session_info, chunk=chunk)
                   
-        
                 progress_view.update_session(
                     session_info=session_info
                 )   
