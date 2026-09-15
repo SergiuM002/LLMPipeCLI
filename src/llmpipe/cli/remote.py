@@ -179,7 +179,7 @@ def delete_session(
 
     if not json_manager.session_exists(login_info["hostname"], login_info["username"], session_name):
         display.show_error_message("The specified session was not found for this user.")
-        raise typer.Exit(2)   
+        raise typer.Exit(3)   
     
     session_status = ssh.check_session_in_progress(session_name)
     
@@ -191,15 +191,56 @@ def delete_session(
     else:
         delete = typer.confirm(f"Are you sure you want to delete session '{session_name}'? ")
         
-    if delete:
-        try:
-            session_manager.delete_session(session_name, session_status, login_info["hostname"], login_info["username"])
-            display.show_success_message(f"Session '{session_name}' deleted successfully.")
-        except (FileNotFoundError, RuntimeError):
-            display.show_error_message("The specified session was not found for this user.")
-            raise typer.Exit(2)
-    else:
+    if not delete:
+        raise typer.Exit(0)
+    
+    try:
+        session_manager.delete_session(session_name, session_status, login_info["hostname"], login_info["username"])
+        display.show_success_message(f"Session '{session_name}' deleted successfully.")
+    except (FileNotFoundError, RuntimeError):
+        display.show_error_message("The specified session was not found for this user.")
+        raise typer.Exit(3)
+
+@app.command()
+def delete_all_sessions(
+    
+):
+    """Deletes all synced sessions."""
+    if (ssh_active := ssh.ssh_active()) == 1:
+        display.show_not_logged_in_error()
+        raise typer.Exit(1)
+    elif ssh_active == 2:
+        display.show_connection_timeout_error()
+        raise typer.Exit(2)
+    
+    login_info = json_manager.load_login_info()
+
+    if not json_manager.any_session_exists(login_info["hostname"], login_info["username"]):
+        display.show_error_message("No session was found for this user.")
+        raise typer.Exit(3)   
+    
+    delete = typer.confirm("Are you sure you want to delete all sessions? This may include still running sessions.")
+    
+    if not delete:
         display.show_simple_message("Delete aborted.")
+        raise typer.Exit(0)
+        
+    sessions = json_manager.load_sessions_info(login_info["hostname"], login_info["username"])  
+    
+    errors = 0
+    
+    for session in sessions:
+        try:
+            session_status = ssh.check_session_in_progress(session["name"])
+            session_manager.delete_session(session["name"], session_status, login_info["hostname"], login_info["username"])
+        except (FileNotFoundError, RuntimeError):
+            display.show_warning_message(f"Could not delete session '{session["name"]}'.")
+            errors += 1
+            
+    if errors == 0:
+        display.show_success_message("All sessions deleted successfully!")
+    else:
+        display.show_warning_message(f"All sessions deleted except {errors}.")
             
 def _update_running_sessions(
     running_sessions: list[dict], 

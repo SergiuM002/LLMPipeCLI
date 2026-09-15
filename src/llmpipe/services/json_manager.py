@@ -78,7 +78,18 @@ def session_exists(hostname: str, username: str, session_name: str) -> bool:
             return True
         
     return False
+
+def any_session_exists(hostname: str, username: str) -> bool:
+    SAVE_PATH = SESSIONS_PATH / hostname / username / "sessions.json"
         
+    if not Path(SAVE_PATH).exists():
+        return False
+        
+    sessions_info = load_sessions_info(hostname, username)
+    
+    return sessions_info and any(sessions_info)
+
+
 def save_login_info(hostname: str, username: str):
     LOGIN_INFO_PATH = CONFIG_PATH / "login-info.json"
 
