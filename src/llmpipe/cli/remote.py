@@ -1,9 +1,9 @@
 from typing import Annotated
 import typer
 from pathlib import Path
-from rich.progress import Progress, BarColumn, TextColumn, Task, TaskProgressColumn, TimeRemainingColumn, ProgressColumn
-from rich.live import Live
 from rich.text import Text
+from rich.console import Group
+from rich.live import Live
 
 from .app import app
 import llmpipe.services.ssh_manager as ssh
@@ -14,20 +14,7 @@ import llmpipe.ui.displays as display
 
 FASTA_EXTENSIONS = {".fasta", ".fa", ".fna"}
     
-class DynamicColumn(ProgressColumn):
-    def __init__(self, column_type, attribute_name: str, **kwargs):
-        super().__init__()
-        self.column = column_type(**kwargs)
-        self.attribute_name = attribute_name
-        
-    def get_table_column(self):
-        return self.column.get_table_column()
-        
-    def render(self, task: Task) -> Text:
-        enabled = task.fields.get(self.attribute_name)
-        if not enabled:
-            return Text("")  # Hide progress
-        return self.column.render(task) # Show progress
+
 
 def validate_fasta_file(path: Path) -> Path:
     if path.suffix.lower() not in FASTA_EXTENSIONS:
@@ -98,9 +85,7 @@ def start_session(
             display.show_error_message(f"A session with the name '{session_name}' already exists for this user.")
         case 0:
             display.show_success_message(f"Session '{session_name}' created successfully!")
-            display.show_simple_message("Run 'llmpipe view-sessions' to see progress.")
-            
-            
+            display.show_simple_message("Run 'llmpipe view-sessions' to see progress.")            
             
 @app.command()
 def view_sessions():
@@ -113,45 +98,40 @@ def view_sessions():
     try:
         running_sessions = []
         
-        progress = Progress(
-            TextColumn("{task.fields[desc_name]}"),
-            TextColumn("{task.fields[desc_server]}"),
-            TextColumn("{task.fields[desc_synced]}"),
-            DynamicColumn(BarColumn, "show_live_progress"),
-            DynamicColumn(TaskProgressColumn, "show_live_progress"),
-            TextColumn("{task.fields[desc_status]}"),
-            DynamicColumn(TextColumn, "show_eta", text_format="{task.fields[desc_eta]}"),
-        )
+        # Static table for unsynced sessions and finished synced sessions
+        static_table = display.SessionTableView()
         
-        with Live(progress, vertical_overflow="visible") as live:
-            view = display.SessionProgressView(progress)
+        # Get unsynced sessions saved info
+        for session_info in session_manager.get_unsynced_sessions(logged_in):
+            static_table.add_row(
+                session_info=session_info,
+                synced=False
+            )
             
-            # Get unsynced sessions saved info
-            for session_info in session_manager.get_unsynced_sessions(logged_in):
-                view.add_session(
-                    session_info=session_info,
-                    synced=False
-                )
+        if not logged_in:
+            return
+        
+        # Get synced sessions saved info
+        login_info = json_manager.load_login_info()
+        synced_sessions = session_manager.get_synced_sessions()
+        
+        running_sessions = []
+        
+        for session_info in synced_sessions:
+            json_manager.save_session_info(login_info["hostname"], login_info["username"], session_info)
+            if session_info["finished"] == False:
+                running_sessions.append(session_info)   
+            else:
+                static_table.add_row(session_info=session_info, synced=True)
                 
-            if not logged_in:
-                return
-            
-            # Get synced sessions saved info
-            login_info = json_manager.load_login_info()
-            synced_sessions = session_manager.get_synced_sessions()
-            
-            for session_info in synced_sessions:
-                view.add_session(
-                    session_info=session_info,
-                    synced=True
-                )    
-                json_manager.save_session_info(login_info["hostname"], login_info["username"], session_info)
-            running_sessions = [d for d in synced_sessions if d.get("finished") == False]
-            
-            if not running_sessions:
-                return
-            
-            _update_running_sessions(running_sessions=running_sessions, live=live, view=view, login_info=login_info)
+        # Print unsynced and finished synced sessions
+        static_table.print_table()
+        
+        if not running_sessions:
+            return
+        
+        # Keep updating the unfinished synced sessions
+        _update_running_sessions(running_sessions=running_sessions, login_info=login_info)
                             
     except KeyboardInterrupt:
         for session_info in running_sessions:
@@ -244,41 +224,60 @@ def delete_all_sessions(
             
 def _update_running_sessions(
     running_sessions: list[dict], 
-    live: Live,
-    view: display.SessionProgressView,
     login_info: dict[str]
 ):
+    # Dynamic table for newly finished sessions
+    dynamic_table = display.SessionTableView()
+    # Live progress updater
+    progress_view = display.SessionProgressView()
+    
+    render_group = Group(dynamic_table.get_table_object(), progress_view.get_progress_object())
+    
     # Stream readers to read real-time remote logs
-    readers = []
+    readers = [
+        session_manager.StreamReader(
+            ssh.get_active_command(f"tail -n 1 -f ~/LLMPipe/{session_info["name"]}.log")
+        )   
+        for session_info in running_sessions
+    ]
+    
     for session_info in running_sessions:
-        readers.append(session_manager.StreamReader(ssh.get_active_command(f"tail -n 1 -f ~/LLMPipe/{session_info["name"]}.log")))
-
-    while True:
-        for i, session_info in enumerate(running_sessions):
-            chunk, connected = readers[i].read_chunks()
-            if not connected:
-                live.stop()
-                display.show_error_message("Connection dropped.")
-                raise typer.Exit(2)
+            progress_view.add_session(session_info=session_info)
             
-            if chunk == "\n" or chunk == "":
-                continue
+    with Live(render_group, refresh_per_second=4, vertical_overflow="ellipsis"):
+        while running_sessions:
+            to_remove = []
             
-            session_info = session_manager.get_session_progress(session_info=session_info, chunk=chunk)
+            for i, session_info in enumerate(running_sessions):
+                chunk, connected = readers[i].read_chunks()
+                if not connected:
+                    display.show_error_message("Connection dropped.")
+                    raise typer.Exit(2)
                 
-            view.update_session(
-                session_info=session_info,
-                synced=True,
-            )   
-            if session_info["finished"] == False:
-                running_sessions[i] = session_info
-            else:
+                if chunk == "\n" or chunk == "":
+                    continue
+                
+                session_info = session_manager.get_session_progress(session_info=session_info, chunk=chunk)
+                  
+        
+                progress_view.update_session(
+                    session_info=session_info
+                )   
+                    
+                if session_info["finished"]:
+                    to_remove.append(i)
+                    
+            # Remove finished sessions in reversed order
+            for i in reversed(to_remove):
+                session_info = running_sessions.pop(i)
+                progress_view.remove_session(session_info=session_info)
+                dynamic_table.add_row(session_info=session_info, synced=True)
+                
                 json_manager.save_session_info(login_info["hostname"], login_info["username"], session_info)
-                running_sessions.pop(i)
+                
                 readers[i].stop_process()
                 readers.pop(i)
-        if not running_sessions:
-            break
+    
             
     
             
