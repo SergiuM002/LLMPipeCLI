@@ -157,6 +157,10 @@ def get_synced_sessions():
     
     # Filter for unfinished sessions and show finished sessions
     synced_sessions_info = json_manager.load_sessions_info(login_info["hostname"], login_info["username"])
+    
+    if not synced_sessions_info:
+        return []
+    
     synced_sessions_status = _get_sessions_status(synced_sessions_info)
     
     synced_sessions_with_status = [d | {"hostname": login_info["hostname"], "username": login_info["username"]} for d in 
