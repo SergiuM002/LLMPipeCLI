@@ -206,9 +206,11 @@ def delete_session(session_name: str, session_status: int, hostname: str, userna
             
     if session_status == 0:
         try:
-            ssh.execute_command(f"tmux kill-session -t {session_name}")
-            ssh.execute_command(f"rm ~/LLMPipe/{session_name}.log")
-            ssh.execute_command(f"rm ~/LLMPipe/{session_name}.fa")
+            ssh.execute_command(
+                f"tmux kill-session -t {session_name}; "
+                f"rm ~/LLMPipe/{session_name}.log; "
+                f"rm ~/LLMPipe/{session_name}.fa"
+            )
         except ssh.RemoteCommandError:
             pass
     elif session_status == 1:
@@ -228,13 +230,15 @@ def _get_fasta_sequence_count(path: Path) -> int:
         return sum(1 for line in f if line.startswith(">"))
         
 def _get_sessions_status(sessions_info: list[dict[str]]) -> list[str]:
+    session_names = [session_info["name"] for session_info in sessions_info]
+    sessions_status_codes = ssh.check_session_in_progress_bulk(session_names)
+    
     sessions_status = []
     
-    for session_info in sessions_info:
-        return_code = ssh.check_session_in_progress(session_info["name"])
-        if return_code == 0:
+    for status_code in sessions_status_codes:
+        if status_code == 0:
             sessions_status.append("in_progress")
-        elif return_code == 1:
+        elif status_code == 1:
             sessions_status.append ("finished")  
             
     return sessions_status

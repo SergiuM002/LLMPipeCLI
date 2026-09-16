@@ -95,6 +95,9 @@ def view_sessions():
     else:
         logged_in = False
         
+    if logged_in:
+        _sync_sessions()
+            
     try:
         running_sessions = []
         
@@ -222,6 +225,45 @@ def delete_all_sessions(
         display.show_success_message("All sessions deleted successfully!")
     else:
         display.show_warning_message(f"All sessions deleted except {errors}.")
+        
+
+def _sync_sessions():
+    """Sync the locally logged sessions with the remote files."""
+    login_info = json_manager.load_login_info()
+    
+    # Sync finished remote sessions
+    finished_sessions = ssh.get_finished_remote_sessions()
+    for session_dict in finished_sessions:
+        json_manager.save_session_info(
+            hostname=login_info["hostname"],
+            username=login_info["username"],
+            session_info=session_dict
+        )
+        
+    # Sync running remote sessions
+    running_sessions = ssh.get_running_remote_sessions()
+    for session_dict in running_sessions:
+        json_manager.save_session_info(
+            hostname=login_info["hostname"],
+            username=login_info["username"],
+            session_info=session_dict
+        )
+        
+    logged_sessions = session_manager.get_synced_sessions()
+    
+    # Filter out actually present sessions and delete ones that do not exist anymore
+    logged_names = [logged_session["name"] for logged_session in logged_sessions]
+    non_deleted_names = [non_deleted_session["name"] for non_deleted_session in (finished_sessions + running_sessions)]
+    
+    deleted_names = list(set(logged_names) - set(non_deleted_names))
+        
+    # Delete logs of non-existant sessions
+    for session_name in deleted_names:
+        json_manager.delete_session(
+            hostname=login_info["hostname"],
+            username=login_info["username"],
+            session_name=session_name
+        )
             
 def _update_running_sessions(
     running_sessions: list[dict], 

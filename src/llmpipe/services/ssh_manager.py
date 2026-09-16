@@ -1,5 +1,7 @@
 import subprocess
 from pathlib import Path
+import re
+from collections import defaultdict
 
 from llmpipe.config import SOCKET_PATH, SOCKET_DIR
 from llmpipe.ui.displays import show_simple_message
@@ -70,6 +72,38 @@ def check_session_in_progress(session_name: str) -> int:
         return 0
     else:
         return 2
+    
+def check_session_in_progress_bulk(session_names: str) -> list[int]:
+    cmd_parts = []
+    for s in session_names:
+        cmd_parts.append(
+            f'tmux has-session -t ={s} 2>/dev/null; '
+            f'tx_rc=$?; '
+            f'[ -f ~/LLMPipe/{s}.log ]; '
+            f'lg_rc=$?; '
+            f'echo "$tx_rc|$lg_rc|{s}"'
+        )   
+    
+    batch_cmd = " ; ".join(cmd_parts)
+    raw_output = execute_command(batch_cmd, capture_output=True) or ""
+    
+    status_list = []
+    for line in raw_output.splitlines():
+        parts = line.split("|", 2)
+        
+        if len(parts) > 3:
+            raise RemoteCommandError
+        
+        tmux_return, log_return = parts[0], parts[1]
+        
+        if tmux_return != "0" and log_return != "0":
+            status_list.append(1)
+        elif tmux_return == "0" and log_return == "0":
+            status_list.append(0)
+        else:
+            status_list.append(2)
+            
+    return status_list 
 
 def upload_file(local_path: str, remote_path: str):
     """Uploads file using rsync."""
@@ -126,18 +160,26 @@ def download_file(remote_path: str, local_path: str, mkpath: bool=False):
         case _:
             raise RemoteCommandError()
     
-def execute_command(command: str, capture_error: bool=False, timeout: int=10):
+def execute_command(command: str, capture_output=False, capture_error: bool=False, timeout: int=10):
     if not SOCKET_PATH.exists():
         raise LoginError()
     
     cmd = get_base_ssh_cmd() + ["placeholder_host", command]
     
     try:
-        result = subprocess.run(cmd, timeout=timeout, capture_output=capture_error, text=capture_error)
+        result = subprocess.run(
+            cmd, 
+            timeout=timeout, 
+            capture_output=capture_error or capture_output, 
+            text=capture_error or capture_output
+        )
         if result.returncode != 0:
-            raise RemoteCommandError((result.stderr.strip() if capture_error else ""))
+            raise RemoteCommandError((result.stderr.strip() if capture_error or capture_output else ""))
     except subprocess.TimeoutExpired:
         raise ConnectionError()
+        
+    if capture_output:
+        return result.stdout
         
 def login(hostname: str, username: str, persist: str) -> int:
     """Authenticate and create the background SSH master socket."""
@@ -200,4 +242,92 @@ def logout():
         SOCKET_PATH.unlink(missing_ok=True)
 
     return 0
+
+def get_finished_remote_sessions():
+    """Get the finished remote sessions."""   
+    if not SOCKET_PATH.exists():
+        raise LoginError()
     
+    cmd = "find ~/LLMPipe/results -mindepth 2 -maxdepth 2 -type f"
+    raw_files = execute_command(cmd, capture_output=True) or ""
+    
+    # Group files by their parent directory (session name)
+    dir_files = defaultdict(list)
+    for filepath in raw_files.splitlines():
+        p = Path(filepath)
+        dir_files[p.parent.name].append(p.name)
+        
+    session_dicts = []
+    for session_name, files in dir_files.items():
+        # Validate expected file contents
+        has_scores = f"{session_name}_scores_table0.csv" in files
+        has_file_ids = "fileIDs.txt" in files
+        
+        if has_scores and has_file_ids:
+            # There should be a csv file per sequence (minus 1 because of fileIDs.txt)
+            sequence_count = len(files) - 1
+            session_dicts.append(
+                {
+                    "name": session_name,
+                    "sequence_count": sequence_count,
+                    "sequence_progress": sequence_count,
+                    "progress": 100,
+                    "finished": True    
+                }
+            )
+        
+    return session_dicts
+
+def get_running_remote_sessions():
+    """Get the running remote sessions."""   
+    if not SOCKET_PATH.exists():
+        raise LoginError()
+    
+    # Get active tmux sessions
+    try:
+        tmux_sessions = execute_command('tmux ls -F "#{session_name}"', capture_output=True).splitlines()
+    except RemoteCommandError:
+        return []
+        
+    # Batch count and log inspections for ALL tmux sessions into 1 compound shell command
+    cmd_parts = []
+    for s in tmux_sessions:
+        cmd_parts.append(
+            f'if [ -f ~/LLMPipe/{s}.log ]; then '
+            f'sc=$(grep -c "^>" ~/LLMPipe/{s}.fa 2>/dev/null || echo 0); '
+            f'sp=$(grep -c -E "Processing windows: [0-9]+it " ~/LLMPipe/{s}.log 2>/dev/null || true); '
+            f'last=$(tr "\r" "\n" < ~/LLMPipe/{s}.log | tail -n 1 ); '
+            f'echo "{s}|$sc|$sp|$last"; '
+            f'fi'
+        )
+        
+    batch_cmd = " ; ".join(cmd_parts)
+    raw_output = execute_command(batch_cmd, capture_output=True) or ""
+    
+    session_dicts = []
+    for line in raw_output.splitlines():
+        if not line.strip():
+            continue
+        
+        # Parse the structured "|"-delimited result
+        parts = line.split("|", 3)
+        if len(parts) < 4:
+            continue
+        
+        session_name, sequence_count, sequence_progress, last_log = parts[0], parts[1], parts[2], parts[3]
+    
+        match = re.search(r"Processing windows:\s*(\d+)%", last_log)
+        progress = int(match.group(1)) if match else 0
+
+        session_dicts.append(
+            {
+                "name": session_name,
+                "sequence_count": int(sequence_count or 1),
+                "sequence_progress": int(sequence_progress) + 1 or 1,
+                "progress": progress,
+                "finished": False    
+            }
+        )
+        
+    return session_dicts
+            
