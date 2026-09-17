@@ -27,7 +27,7 @@ The latter also works outside the virtual environment.
 
 ### Option 1: Install from GitHub directly
 ```bash
-uv tool install <repository-link>
+uv tool install git+<repository-link>
 ```
 
 ### Option 2: Install from local directory
