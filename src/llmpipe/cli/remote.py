@@ -74,6 +74,8 @@ def start_session(
         display.show_connection_timeout_error()
         raise typer.Exit(2)
     
+    _sync_sessions()
+    
     return_code = session_manager.start_session(session_name, fasta_file, language_model, context_window, align)
 
     match return_code:
