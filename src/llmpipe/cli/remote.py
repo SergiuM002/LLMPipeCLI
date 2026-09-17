@@ -287,13 +287,14 @@ def _update_running_sessions(
     for session_info in running_sessions:
             progress_view.add_session(session_info=session_info)
             
-    with Live(render_group, refresh_per_second=4, vertical_overflow="ellipsis"):
+    with Live(render_group, refresh_per_second=4, vertical_overflow="ellipsis") as live:
         while running_sessions:
             to_remove = []
             
             for i, session_info in enumerate(running_sessions):
                 chunk, connected = readers[i].read_chunks()
                 if not connected:
+                    live.stop()
                     display.show_error_message("Connection dropped.")
                     raise typer.Exit(2)
                 
