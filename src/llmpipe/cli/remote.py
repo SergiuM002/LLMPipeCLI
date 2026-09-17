@@ -40,7 +40,7 @@ def get_files(
         raise typer.Exit(3)
       
     try:
-        ssh.download_file(f"~/LLMPipe/results/{session_name}", download_path)
+        ssh.download_file(f"~/LLMPipe/results/{session_name}/", f"{download_path}/{session_name}_results/")
         display.show_success_message("Files transfered successfully.")
     except FileNotFoundError:
         display.show_error_message("Session directory is missing.")
