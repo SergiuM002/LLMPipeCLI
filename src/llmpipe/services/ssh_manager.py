@@ -248,7 +248,7 @@ def get_finished_remote_sessions():
     if not SOCKET_PATH.exists():
         raise LoginError()
     
-    cmd = "find ~/LLMPipe/results -mindepth 2 -maxdepth 2 -type f"
+    cmd = "find ~/LLMPipe/results -mindepth 2 -maxdepth 2 -type f | sort"
     raw_files = execute_command(cmd, capture_output=True) or ""
     
     # Group files by their parent directory (session name)
