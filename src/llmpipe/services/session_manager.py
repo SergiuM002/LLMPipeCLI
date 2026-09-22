@@ -1,71 +1,34 @@
-import threading
 import re
-from queue import Queue, Empty
 from pathlib import Path
 
 from llmpipe.config import LanguageModel, ContextWindow, SESSIONS_PATH
 from . import ssh_manager as ssh
 from . import json_manager as json_manager
 
-class StreamReader:
-    def __init__(self, process):
-        self._process = process
-        self._stream = process.stdout
-        self._queue = Queue()
-        self.is_connected = True
-        self._thread = threading.Thread(target=self._populate_queue, daemon=True)
-        self._thread.start()
-
-    def _populate_queue(self):
-        """Background worker that continuously reads stdout."""
-        while True:
-            line = self._stream.readline()
-            
-            if not line:  # Connection dropped
-                self.is_connected = False
-                self._queue.put(None)  # Sentinel value signaling stream closure
-                break
-
-            if line:
-                self._queue.put(line)
-
-    def read_chunks(self) -> tuple[str, bool]:
-        """Fetch all currently accumulated chunks from the queue."""
-        chunks = []
-        while True:
-            try:
-                item = self._queue.get_nowait()
-                if item is None:  # Disconnection sentinel consumed
-                    self.is_connected = False
-                    break
-                chunks.append(item)
-            except Empty:
-                break
-        return "".join(chunks), self.is_connected
-    
-    def stop_process(self):
-        """Terminates the process."""
-        self._process.terminate()
-        self._process.wait()
-        
-
-def start_session(session_name: str, fasta_file: Path, language_model: LanguageModel, context_window: ContextWindow, align: bool):
+def start_session(
+    session_name: str,
+    fasta_file: Path, 
+    language_model: LanguageModel, 
+    context_window: ContextWindow, 
+    align: bool,
+    ssh_session: ssh.SSHSession
+) -> int:
     login_info = json_manager.load_login_info()
     if json_manager.session_exists(login_info["hostname"], login_info["username"], session_name):
         return 3
     
     try:
-        ssh.upload_file(str(fasta_file), f"~/LLMPipe/{session_name}.fa")
-    except ssh.RemoteCommandError:
+        ssh_session.upload_file(str(fasta_file), f"LLMPipe/{session_name}.fa")
+    except FileNotFoundError:
         return 2
     
     try:
-        ssh.execute_command(f"touch ~/LLMPipe/{session_name}.log")
+        ssh_session.execute_command(f"touch LLMPipe/{session_name}.log")
     except ssh.RemoteCommandError:
         return 1
                 
     command = (
-        "cd ~/LLMPipe && "
+        "cd LLMPipe && "
         "source ../miniconda3/etc/profile.d/conda.sh && "
         "conda activate plantcad_env && "
         "python llm_pipe.py -f "
@@ -107,12 +70,12 @@ def start_session(session_name: str, fasta_file: Path, language_model: LanguageM
     )
     
     try:
-        ssh.execute_command(f"tmux new-session -d -s {session_name}")
+        ssh_session.execute_command(f"tmux new-session -d -s {session_name}")
     except ssh.RemoteCommandError:
         return 1
 
     try:
-        ssh.execute_command(f'tmux send-keys -t {session_name} "{command}" C-m')  
+        ssh_session.execute_command(f'tmux send-keys -t {session_name} "{command}" C-m')  
     except ssh.RemoteCommandError:
         return 1
     
@@ -152,7 +115,7 @@ def get_unsynced_sessions(logged_in: bool):
         for uname in usernames[hname]:
             yield from (d | {"hostname": hname, "username": uname} for d in json_manager.load_sessions_info(hname, uname)) 
          
-def get_synced_sessions():   
+def get_synced_sessions(ssh_session: ssh.SSHSession):   
     login_info = json_manager.load_login_info()
     
     # Filter for unfinished sessions and show finished sessions
@@ -161,7 +124,7 @@ def get_synced_sessions():
     if not synced_sessions_info:
         return []
     
-    synced_sessions_status = _get_sessions_status(synced_sessions_info)
+    synced_sessions_status = _get_sessions_status(synced_sessions_info, ssh_session)
     
     synced_sessions_with_status = [d | {"hostname": login_info["hostname"], "username": login_info["username"]} for d in 
         _get_sessions_with_finished_state(sessions=synced_sessions_info, sessions_status=synced_sessions_status)] 
@@ -177,6 +140,10 @@ def get_session_progress(session_info: dict, chunk: str):
         return session_info
     
     if re.search(r"Processing windows: \d+it ", chunk):
+        '''        if session_info["sequence_progress"] == session_info["sequence_count"]:
+            session_info["finished"] = True  
+            session_info["processing"] = False
+            return session_info   '''
         session_info["sequence_progress"] += 1
         session_info["progress"] = 0
         session_info["processing"] = False
@@ -204,13 +171,13 @@ def get_session_progress(session_info: dict, chunk: str):
     return session_info
     
         
-def delete_session(session_name: str, session_status: int, hostname: str, username: str):
+def delete_session(session_name: str, session_status: int, hostname: str, username: str, ssh_session: ssh.SSHSession):
  
     json_manager.delete_session(hostname, username, session_name)
             
     if session_status == 0:
         try:
-            ssh.execute_command(
+            ssh_session.execute_command(
                 f"tmux kill-session -t {session_name}; "
                 f"rm ~/LLMPipe/{session_name}.log; "
                 f"rm ~/LLMPipe/{session_name}.fa"
@@ -219,7 +186,7 @@ def delete_session(session_name: str, session_status: int, hostname: str, userna
             pass
     elif session_status == 1:
         try:
-            ssh.execute_command(f"rm -r ~/LLMPipe/results/{session_name}")
+            ssh_session.execute_command(f"rm -r ~/LLMPipe/results/{session_name}")
         except ssh.RemoteCommandError:
             pass        
         
@@ -233,9 +200,9 @@ def _get_fasta_sequence_count(path: Path) -> int:
     with open(path, "r") as f:
         return sum(1 for line in f if line.startswith(">"))
         
-def _get_sessions_status(sessions_info: list[dict[str]]) -> list[str]:
+def _get_sessions_status(sessions_info: list[dict[str]], ssh_session: ssh.SSHSession) -> list[str]:
     session_names = [session_info["name"] for session_info in sessions_info]
-    sessions_status_codes = ssh.check_session_in_progress_bulk(session_names)
+    sessions_status_codes = ssh_session.check_session_in_progress_bulk(session_names)
     
     sessions_status = []
     

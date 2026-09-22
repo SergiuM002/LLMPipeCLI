@@ -9,6 +9,7 @@ dependencies = [
     "annotated-doc==0.0.5",
     "markdown-it-py==4.2.0",
     "mdurl==0.1.2",
+    "paramiko>=5.0.0",
     "pygments==2.21.0",
     "rich==15.0.0",
     "shellingham==1.5.4",

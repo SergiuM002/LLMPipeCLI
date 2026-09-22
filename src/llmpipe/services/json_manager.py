@@ -39,6 +39,7 @@ def load_sessions_info(hostname: str, username: str):
         with open(SAVE_PATH, "r") as f:
             saved_sessions = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
+        Path(SAVE_PATH).parent.mkdir(parents=True, exist_ok=True)
         with open(SAVE_PATH, "w") as f:
             json.dump([], f)
             saved_sessions = []
@@ -90,14 +91,15 @@ def any_session_exists(hostname: str, username: str) -> bool:
     return sessions_info and any(sessions_info)
 
 
-def save_login_info(hostname: str, username: str):
+def save_login_info(hostname: str, username: str, port: int):
     LOGIN_INFO_PATH = CONFIG_PATH / "login-info.json"
 
     Path(LOGIN_INFO_PATH).parent.mkdir(parents=True, exist_ok=True)
     
     login_info = {
         "hostname": hostname,
-        "username": username
+        "username": username,
+        "port": port
     }
     
     with open(LOGIN_INFO_PATH, "w") as f:
@@ -105,9 +107,15 @@ def save_login_info(hostname: str, username: str):
         
 def load_login_info():
     LOGIN_INFO_PATH = CONFIG_PATH / "login-info.json"
-    
-    with open(LOGIN_INFO_PATH, "r") as f:
-        return json.load(f)
+
+    try:
+        with open(LOGIN_INFO_PATH, "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+    except json.JSONDecodeError:
+        with open(LOGIN_INFO_PATH, "w") as f:
+            json.dump([], f)
     
 def delete_login_info():
     LOGIN_INFO_PATH = CONFIG_PATH / "login-info.json"
@@ -119,5 +127,8 @@ def delete_login_info():
         
 def logged_in_to_as(hostname: str, username: str) -> bool:
     login_info = load_login_info()
+
+    if not login_info:
+        return False
     
     return hostname == login_info["hostname"] and username == login_info["username"]

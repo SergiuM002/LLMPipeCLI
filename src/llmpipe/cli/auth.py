@@ -2,6 +2,7 @@ from typing import Annotated
 import typer
 
 import llmpipe.services.ssh_manager as ssh
+import llmpipe.services.json_manager as json_manager
 import llmpipe.ui.displays as display
 from llmpipe.services.json_manager import save_login_info, load_login_info, delete_login_info
 from llmpipe.cli.app import app
@@ -9,49 +10,55 @@ from llmpipe.cli.app import app
 @app.command()
 def view_login():
     """Prints the username and hostname with which the user is logged in."""
-    if (ssh_active := ssh.ssh_active()) == 1:
-        display.show_not_logged_in_error()
+    if not (login_info := load_login_info()):
+        display.show_bold_colored_message("You are not logged in.", "red")
         raise typer.Exit(1)
-    elif ssh_active == 2:
-        display.show_connection_timeout_error()
-        raise typer.Exit(2)
-    
-    login_info = load_login_info()
+
     display.show_success_message(f"You are logged in to {login_info["hostname"]} as {login_info["username"]}.")
+    raise typer.Exit(0)
 
 @app.command()
 def login(
     hostname: Annotated[str, typer.Argument(help="Hostname of the server")],
     username: Annotated[str, typer.Argument(help="Login username for the specified server")],
-    persist: Annotated[str, typer.Option("--persist", "-p", help="Idle timeout for login (e.g. 30m, 1h, yes)")] = "1h"
+    port: Annotated[str, typer.Option("--port", "-p", help="The port to be used for the connection.")] = 22
 ):
     """Logs the user in with the specified idle timeout."""
-    return_code = ssh.login(hostname, username, persist)
-    
-    match return_code:
-        case 0:
-            display.show_success_message("Login successful!")
-            save_login_info(hostname, username)
-            raise typer.Exit(0)
-        case 1:
-            display.show_bold_colored_message("Already logged in, updated timeout timer.", "yellow")
-            raise typer.Exit(1)
-        case 2:
-            display.show_connection_timeout_error()
-            raise typer.Exit(2)
+    if json_manager.logged_in_to_as(hostname, username):
+        display.show_bold_colored_message("Already logged in.", "yellow")
+        raise typer.Exit(1)
+
+    password = typer.prompt("Password", hide_input=True)
+
+    try:
+        ssh.login(hostname=hostname, username=username, password=password, port=port)
+    except (RuntimeError, ssh.RemoteCommandError) as e:
+        display.show_error_message(e)
+        raise typer.Exit(2)
+
+    json_manager.save_login_info(hostname, username, port)
+
+    display.show_success_message("Successfully logged in!")
+    raise typer.Exit(0)
             
 @app.command()
 def logout():
     """Logs the user out."""
-    return_code = ssh.logout()
+    try:
+        with ssh.SSHSession() as ssh_session:
+            ssh_session.logout()
+    except ssh.LoginError:
+        display.show_bold_colored_message("Already logged out.", "yellow")
+        raise typer.Exit(1)
+    except RuntimeError as e:
+        display.show_error_message(e)
+        raise typer.Exit(2)
+
+    display.show_success_message("Logged out successfully!")
+    raise typer.Exit(0)
+
     
-    match return_code:
-        case 0:
-            display.show_success_message("Logged out successfully!")
-            delete_login_info()
-            raise typer.Exit(0)
-        case 1:
-            display.show_bold_colored_message("Already logged out.", "yellow")
-            raise typer.Exit(1)
+   
+
     
     
