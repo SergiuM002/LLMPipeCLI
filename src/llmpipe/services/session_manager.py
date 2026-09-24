@@ -21,11 +21,6 @@ def start_session(
         ssh_session.upload_file(str(fasta_file), f"LLMPipe/{session_name}.fa")
     except FileNotFoundError:
         return 2
-    
-    try:
-        ssh_session.execute_command(f"touch LLMPipe/{session_name}.log")
-    except ssh.RemoteCommandError:
-        return 1
                 
     command = (
         "cd LLMPipe && "
@@ -63,9 +58,9 @@ def start_session(
         
 
     command += (
-        f"{session_name}.fa > {session_name}.log 2>&1 && " 
-        f"rm ~/LLMPipe/{session_name}.fa && "
-        f"rm ~/LLMPipe/{session_name}.log && "
+        f"{session_name}.fa &> {session_name}.log ; " 
+        f"rm ~/LLMPipe/{session_name}.fa ; "
+        f"rm ~/LLMPipe/{session_name}.log ; "
         f"tmux kill-session -t {session_name}"
     )
     
@@ -140,10 +135,6 @@ def get_session_progress(session_info: dict, chunk: str):
         return session_info
     
     if re.search(r"Processing windows: \d+it ", chunk):
-        '''        if session_info["sequence_progress"] == session_info["sequence_count"]:
-            session_info["finished"] = True  
-            session_info["processing"] = False
-            return session_info   '''
         session_info["sequence_progress"] += 1
         session_info["progress"] = 0
         session_info["processing"] = False
