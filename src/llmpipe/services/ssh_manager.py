@@ -91,7 +91,7 @@ class SSHSession:
             self.client = self._get_authenticated_client()
             self.hostname = login_info["hostname"]
             self.username = login_info["username"]
-            self.port = login_info["port"]
+            self.port = login_info.get("port")
         else:
             raise LoginError()
         return self
