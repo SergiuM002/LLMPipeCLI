@@ -43,9 +43,9 @@ def remote_install(
             
             _setup_environment(progress, ssh_session)
                 
-            view.update(40, "Installing extensions...")
+            view.update(40, "Installing packages...")
 
-            _install_extensions(progress, view, ssh_session)
+            _install_packages(progress, view, ssh_session)
             
             view.update(95, "Uploading remote script...")
             
@@ -104,7 +104,7 @@ def _setup_environment(progress: Progress, ssh_session: ssh.SSHSession):
         display.show_error_message("Failed to set up environment:\n" + str(e))
         raise typer.Exit(5)
 
-def _install_extensions(progress: Progress, view: display.InstallProgressView, ssh_session: ssh.SSHSession):
+def _install_packages(progress: Progress, view: display.InstallProgressView, ssh_session: ssh.SSHSession):
     ENV_DIR = "$HOME/miniconda3/envs/plantcad_env"
     ENV_BIN = f"{ENV_DIR}/bin"
     ENV_PIP = f"{ENV_BIN}/pip"
@@ -115,10 +115,10 @@ def _install_extensions(progress: Progress, view: display.InstallProgressView, s
         )
     except ssh.RemoteCommandError as e:
         progress.stop()
-        display.show_error_message("Failed to install extensions:\n" + str(e))
+        display.show_error_message("Failed to install packages:\n" + str(e))
         raise typer.Exit(5)
     
-    view.update(65, "Installing extensions...")
+    view.update(65, "Installing packages...")
     
     try:
         ssh_session.execute_command(
@@ -129,10 +129,10 @@ def _install_extensions(progress: Progress, view: display.InstallProgressView, s
         )
     except ssh.RemoteCommandError as e:
         progress.stop()
-        display.show_error_message("Failed to install extensions:\n" + str(e))
+        display.show_error_message("Failed to install packages:\n" + str(e))
         raise typer.Exit(5)
     
-    view.update(70, "Installing extensions...")
+    view.update(70, "Installing packages...")
     
     try:
         ssh_session.execute_command(
@@ -142,16 +142,18 @@ def _install_extensions(progress: Progress, view: display.InstallProgressView, s
         )
     except ssh.RemoteCommandError as e:
         progress.stop()
-        display.show_error_message("Failed to install extensions:\n" + str(e))
+        display.show_error_message("Failed to install packages:\n" + str(e))
         raise typer.Exit(5)
     
-    view.update(90, "Installing extensions...")
+    view.update(90, "Installing packages...")
     
     try:
         ssh_session.execute_command(
-            f"{ENV_PIP} install --quiet git+https://github.com/SilvanCodes/gpn.git",
+            "echo -e 'torch==2.3.1\ntorchvision==0.18.1\ntorchaudio==2.3.1\ntransformers==4.40.0' > constraints.txt && "
+            f"{ENV_PIP} install git+https://github.com/SilvanCodes/gpn.git -c constraints.txt && "
+            "rm constraints.txt"
         )
     except ssh.RemoteCommandError as e:
         progress.stop()
-        display.show_error_message("Failed to install extensions:\n" + str(e))
+        display.show_error_message("Failed to install packages:\n" + str(e))
         raise typer.Exit(5)
