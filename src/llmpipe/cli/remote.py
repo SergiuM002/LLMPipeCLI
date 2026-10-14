@@ -76,6 +76,14 @@ def start_session(
     if not json_manager.load_login_info():
         display.show_not_logged_in_error()
         raise typer.Exit(1)
+    
+    if not _is_valid_llm_contextwindow_match(language_model, context_window):
+        display.show_error_message(f"The context window of {context_window.value} is not available of {language_model.value}.")
+        
+        if language_model == LanguageModel.P1:
+            display.show_bold_colored_message(f"You can only run this model with a context window of {ContextWindow.BP512.value}.", "red")   
+
+        raise typer.Exit(6)
 
     try:
         with ssh.SSHSession() as ssh_session:
@@ -311,6 +319,7 @@ def _update_running_sessions(
     login_info: dict[str],
     ssh_session: ssh.SSHSession
 ):
+    """Update the progress of the running sessions live."""
     # Dynamic table for newly finished sessions
     dynamic_table = display.SessionTableView()
     # Live progress updater
@@ -363,12 +372,8 @@ def _update_running_sessions(
                 readers[i].close_channel()
                 readers.pop(i)
     
-            
-    
-            
-    
-            
-            
-
-            
-            
+def _is_valid_llm_contextwindow_match(language_model: LanguageModel, context_window: ContextWindow):
+    if language_model == LanguageModel.P1:
+        return context_window == ContextWindow.BP512
+    else:
+        return True
