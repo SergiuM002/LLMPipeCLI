@@ -181,12 +181,6 @@ def delete_session(session_name: str, session_status: int, hostname: str, userna
         except ssh.RemoteCommandError:
             pass        
         
-def save_sessions_info(unfinished_sessions: list[dict], finished_sessions: list[dict], login_info: dict):
-    for unfinished_session in unfinished_sessions:
-        json_manager.save_session_info(login_info["hostname"], login_info["username"], unfinished_session)
-    for finished_session in finished_sessions:
-        json_manager.save_session_info(login_info["hostname"], login_info["username"], finished_session)
-        
 def _get_fasta_sequence_count(path: Path) -> int:
     with open(path, "r") as f:
         return sum(1 for line in f if line.startswith(">"))

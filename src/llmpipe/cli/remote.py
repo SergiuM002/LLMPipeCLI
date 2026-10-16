@@ -41,15 +41,22 @@ def get_files(
                 display.show_error_message("The specified session does not exist.")
                 raise typer.Exit(3)
             
-            ssh_session.download_dir(f"LLMPipe/results/{session_name}/", f"{download_path}/{session_name}_results/")
+            local_path = download_path / f"{session_name}_results"
+            if local_path.exists():
+                replace = typer.confirm(f"{local_path} already exists. Continue and overwrite its contents?")
+                
+                if not replace:
+                    display.show_simple_message("Download aborted.")
+                    raise typer.Exit(2)
+
+            ssh_session.download_dir(f"LLMPipe/results/{session_name}/", str(local_path))
 
         display.show_success_message("Files transfered successfully.")
         raise typer.Exit(0)
     except typer.Exit:
         raise
     except FileNotFoundError:
-        raise
-        #display.show_error_message("Session directory is missing.")
+        display.show_error_message("Session directory is missing.")
     except RuntimeError as e:
         display.show_error_message(e)
         
