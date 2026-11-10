@@ -1,10 +1,11 @@
 from pathlib import Path
 from enum import Enum
+import llmpipe
+from importlib.resources import files
 
 CONFIG_PATH =Path.home() / ".config" / "llmpipe"
 SESSIONS_PATH = CONFIG_PATH / "sessions"
-SOCKET_DIR = CONFIG_PATH / "sockets"
-SOCKET_PATH = SOCKET_DIR / "master.sock"
+REMOTE_SCRIPT_PATH = files(llmpipe).joinpath("remote_script/llm_pipe.py")
 
 class LanguageModel(str, Enum):
     C = "caduceus"

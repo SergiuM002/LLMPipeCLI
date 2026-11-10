@@ -8,7 +8,6 @@ from queue import Queue, Empty
 import threading
 import stat
 
-from llmpipe.config import SOCKET_PATH, SOCKET_DIR
 from llmpipe.ui.displays import show_simple_message
 from .exceptions import ConnectionError, LoginError, RemoteCommandError
 from .json_manager import load_login_info

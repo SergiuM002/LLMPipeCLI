@@ -4,6 +4,7 @@ from rich.progress import Progress, BarColumn, TextColumn
 from pathlib import Path
 
 from .app import app
+from llmpipe.config import REMOTE_SCRIPT_PATH
 import llmpipe.ui.displays as display
 import llmpipe.services.ssh_manager as ssh
 import llmpipe.services.json_manager as json_manager
@@ -15,19 +16,8 @@ ENV_BIN = f"{ENV_DIR}/bin"
 ENV_PIP = f"{ENV_BIN}/pip"
 
 @app.command()
-def remote_install(
-    remote_script_path: Annotated[
-        Path, 
-        typer.Argument(
-            help="Path of the llm_pipe remote script", 
-            exists=True, 
-            file_okay=True, 
-            dir_okay=True,
-            readable=True,
-            resolve_path=True
-        )]
-):
-    """Install the remote script and environment on the specified server."""
+def remote_install():
+    """Install the remote script and environment on the logged in server."""
     if not json_manager.load_login_info():
         display.show_not_logged_in_error()
         raise typer.Exit(1)
@@ -64,6 +54,7 @@ def remote_install(
                     "Miniconda failed to install",
                     3
                 )
+            view.update_percentage(10)
             
             run_step(
                 f"{CONDA_INIT}"
@@ -153,7 +144,7 @@ def remote_install(
             ssh_session.execute_command("mkdir -p ~/LLMPipe/results")
         
             try:
-                ssh_session.upload_file(remote_script_path, "LLMPipe/llm_pipe.py")
+                ssh_session.upload_file(REMOTE_SCRIPT_PATH, "LLMPipe/llm_pipe.py")
             except ssh.RemoteCommandError as e:
                 progress.stop()
                 display.show_error_message("Failed to upload remote script:\n" + str(e))
