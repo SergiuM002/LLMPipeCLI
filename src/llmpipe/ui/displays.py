@@ -29,8 +29,11 @@ class InstallProgressView:
     def start(self):
         self.task = self.progress.add_task(description="Downloading miniconda...", total=100)
         
-    def update(self, percentage: int, description: str):
-        self.progress.update(self.task, completed=percentage, description=description)
+    def update_percentage(self, percentage: int):
+        self.progress.update(self.task, completed=percentage)
+        
+    def update_message(self, message: str):
+        self.progress.update(self.task, description=message)  
         
 class SessionTableView:
     def __init__(self):

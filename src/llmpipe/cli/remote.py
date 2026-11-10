@@ -77,7 +77,7 @@ def start_session(
     ],
     language_model: Annotated[LanguageModel, typer.Option(help="LLM used to score the FASTA")] = LanguageModel.P1,
     context_window: Annotated[ContextWindow, typer.Option(help="Context window given to the LLM")] = ContextWindow.BP512,
-    align: Annotated[bool, typer.Option("--align", "-a", help="The sequences will be aligned before being scored")] = False
+    align: Annotated[bool, typer.Option("--align", "-a", help="The sequences will be aligned after being scored")] = False
 ):
     """Start a session with the specified parameters."""
     if not json_manager.load_login_info():

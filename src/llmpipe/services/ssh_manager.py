@@ -160,13 +160,23 @@ class SSHSession:
 
     def upload_file(self, local_path: str, remote_path: str):
         """Uploads file to server."""
-        with self.client.open_sftp() as sftp:
-            sftp.put(local_path, remote_path)
+        try:
+            with self.client.open_sftp() as sftp:
+                sftp.put(local_path, remote_path)
+        except FileNotFoundError:
+            raise RemoteCommandError("Local file not found.")
+        except IOError:
+            raise RemoteCommandError("Remote path not found.")
         
     def download_file(self, remote_path: str, local_path: str):
-        """Downloads file from server."""    
-        with self.client.open_sftp() as sftp:
-            sftp.get(remote_path, local_path)
+        """Downloads file from server."""   
+        try: 
+            with self.client.open_sftp() as sftp:
+                sftp.get(remote_path, local_path)
+        except FileNotFoundError:
+            raise RemoteCommandError("Local path not found.")
+        except IOError:
+            raise RemoteCommandError("Remote file not found.")
 
     def download_dir(self,  remote_path: str, local_path: str):
         """Recursively download a remote directory."""
