@@ -5,7 +5,7 @@ A command-line interface for using DNA language models using typer. This project
 
 Make sure you have [uv](https://docs.astral.sh/uv/) installed on your system:
 
-Using the orginal script:
+Using the original script:
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh| sh
 ```
@@ -43,10 +43,8 @@ uv tool install .
 Run `uv run llmpipe --help` to see what commands you can run and run them with `uv run llmpipe [options] {command} [arguments]`
 
 ### Setting up the remote part
-The remote script is provided in `LLMPipeCLI/remote script/llm_pipe.py`
-
 Install the remote script using the following commands:
 ```bash
 uv run llmpipe login [hostname] [username]
-uv run llmpipe remote-install [path_to_script]
+uv run llmpipe remote-install
 ```
