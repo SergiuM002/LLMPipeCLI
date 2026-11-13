@@ -1,7 +1,7 @@
 [project]
 name = "llmpipe"
 version = "1.0.0"
-description = "Add your description here"
+description = "A command-line interface for using DNA language models using typer"
 readme = "README.md"
 
 requires-python = ">=3.12"
